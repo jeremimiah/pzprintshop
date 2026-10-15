@@ -1,0 +1,1 @@
+export type { User, Customer, Service, Order, OrderItem, Payment, OrderStatusLog, InventoryItem, InventoryMovement, Role, PricingType, OrderStatus, PaymentMethod, PaymentType, MovementType } from "@prisma/client";
