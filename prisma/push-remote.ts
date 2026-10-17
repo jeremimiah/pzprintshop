@@ -11,15 +11,23 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import bcrypt from "bcryptjs";
 
-const url = process.env.DATABASE_URL;
-const authToken = process.env.DATABASE_AUTH_TOKEN;
+type RemoteConfig = { url: string; authToken: string | undefined };
 
-if (!url) throw new Error("DATABASE_URL is required");
-if (!url.startsWith("libsql://") && !url.startsWith("https://")) {
-  throw new Error(`DATABASE_URL must be a Turso URL (libsql://...), got: ${url}`);
+function getConfig(): RemoteConfig {
+  const url = process.env.DATABASE_URL;
+  const authToken = process.env.DATABASE_AUTH_TOKEN;
+
+  if (!url) throw new Error("DATABASE_URL is required");
+  if (!url.startsWith("libsql://") && !url.startsWith("https://")) {
+    throw new Error(`DATABASE_URL must be a Turso URL (libsql://...), got: ${url}`);
+  }
+
+  return { url, authToken };
 }
 
 async function pushSchema() {
+  const { url, authToken } = getConfig();
+
   console.log("Generating SQL from Prisma schema...");
   const sql = execSync(
     "npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script",
@@ -38,7 +46,12 @@ async function pushSchema() {
     .filter((line) => !line.trim().startsWith("--"))
     .join("\n");
 
-  const statements = stripped
+  // Make idempotent so the script is safe to re-run
+  const idempotent = stripped
+    .replace(/CREATE TABLE "(.*?)"/g, 'CREATE TABLE IF NOT EXISTS "$1"')
+    .replace(/CREATE (UNIQUE )?INDEX "(.*?)"/g, 'CREATE $1INDEX IF NOT EXISTS "$2"');
+
+  const statements = idempotent
     .split(";")
     .map((s) => s.trim())
     .filter(Boolean);
@@ -53,6 +66,8 @@ async function pushSchema() {
 }
 
 async function seed() {
+  const { url, authToken } = getConfig();
+
   console.log("\nSeeding...");
   const prisma = new PrismaClient({ adapter: new PrismaLibSql({ url, authToken }) });
 
